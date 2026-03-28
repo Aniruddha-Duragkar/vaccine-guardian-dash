@@ -1,16 +1,54 @@
-// Update this page (the content is just a fallback if you fail to update the page)
+import { SidebarProvider } from "@/components/ui/sidebar";
+import { AppSidebar } from "@/components/dashboard/AppSidebar";
+import { DashboardHeader } from "@/components/dashboard/DashboardHeader";
+import { LiveMonitoringCard } from "@/components/dashboard/LiveMonitoringCard";
+import { StatusCards } from "@/components/dashboard/StatusCards";
+import { AlertsPanel } from "@/components/dashboard/AlertsPanel";
+import { HistoricalChart } from "@/components/dashboard/HistoricalChart";
+import { ControlsPanel } from "@/components/dashboard/ControlsPanel";
+import { useVaccineData } from "@/hooks/useVaccineData";
 
-// IMPORTANT: Fully REPLACE this with your own code
-const PlaceholderIndex = () => {
-  // PLACEHOLDER: Replace this entire return statement with the user's app.
-  // The inline background color is intentionally not part of the design system.
+const Index = () => {
+  const { data, setTargetTemp, manualOverride } = useVaccineData();
+
   return (
-    <div className="flex min-h-screen items-center justify-center" style={{ backgroundColor: '#fcfbf8' }}>
-      <img data-lovable-blank-page-placeholder="REMOVE_THIS" src="/placeholder.svg" alt="Your app will live here!" />
-    </div>
+    <SidebarProvider>
+      <div className="min-h-screen flex w-full">
+        <AppSidebar />
+        <div className="flex-1 flex flex-col min-w-0">
+          <DashboardHeader batteryLevel={data.batteryLevel} deviceOnline={data.deviceOnline} />
+          <main className="flex-1 p-4 lg:p-6 overflow-auto">
+            <div className="flex flex-col lg:flex-row gap-4 lg:gap-6">
+              {/* Main content */}
+              <div className="flex-1 space-y-4 lg:space-y-6 min-w-0">
+                <StatusCards
+                  batteryLevel={data.batteryLevel}
+                  peltierStatus={data.peltierStatus}
+                  doorStatus={data.doorStatus}
+                  signalStrength={data.signalStrength}
+                />
+                <LiveMonitoringCard
+                  currentTemp={data.currentTemp}
+                  targetTemp={data.targetTemp}
+                  humidity={data.humidity}
+                  systemStatus={data.systemStatus}
+                  history={data.temperatureHistory}
+                  onTargetChange={setTargetTemp}
+                />
+                <HistoricalChart />
+              </div>
+
+              {/* Right sidebar */}
+              <div className="w-full lg:w-72 xl:w-80 space-y-4 shrink-0">
+                <AlertsPanel alerts={data.alerts} />
+                <ControlsPanel onOverride={manualOverride} />
+              </div>
+            </div>
+          </main>
+        </div>
+      </div>
+    </SidebarProvider>
   );
 };
-
-const Index = PlaceholderIndex;
 
 export default Index;
