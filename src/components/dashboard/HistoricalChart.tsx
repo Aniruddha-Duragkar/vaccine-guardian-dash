@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useEffect } from "react";
 import {
   LineChart,
   Line,
@@ -9,22 +9,46 @@ import {
   ResponsiveContainer,
   Legend,
 } from "recharts";
+import { supabase } from "@/integrations/supabase/client";
 
-const randomInRange = (min: number, max: number) =>
-  Math.round((Math.random() * (max - min) + min) * 10) / 10;
-
-function generateData(hours: number) {
-  const points = hours <= 24 ? 24 : 7 * 4;
-  return Array.from({ length: points }, (_, i) => ({
-    time: hours <= 24 ? `${String(i).padStart(2, "0")}:00` : `Day ${Math.floor(i / 4) + 1}`,
-    temperature: randomInRange(3.2, 6.5),
-    humidity: randomInRange(42, 62),
-  }));
+interface DataPoint {
+  time: string;
+  temperature: number;
+  humidity: number;
 }
 
 export function HistoricalChart() {
   const [tab, setTab] = useState<"24h" | "7d">("24h");
-  const data = useMemo(() => generateData(tab === "24h" ? 24 : 168), [tab]);
+  const [data, setData] = useState<DataPoint[]>([]);
+
+  useEffect(() => {
+    const fetchHistory = async () => {
+      const hoursAgo = tab === "24h" ? 24 : 168;
+      const since = new Date(Date.now() - hoursAgo * 3600000).toISOString();
+
+      const { data: readings } = await supabase
+        .from("temperature_readings")
+        .select("temperature, humidity, created_at")
+        .gte("created_at", since)
+        .order("created_at", { ascending: true })
+        .limit(200);
+
+      if (readings) {
+        setData(
+          readings.map((r) => ({
+            time:
+              tab === "24h"
+                ? new Date(r.created_at).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" })
+                : new Date(r.created_at).toLocaleDateString("en-IN", { weekday: "short", hour: "2-digit" }),
+            temperature: Number(r.temperature),
+            humidity: Number(r.humidity),
+          }))
+        );
+      }
+    };
+
+    fetchHistory();
+  }, [tab]);
 
   return (
     <div className="glass-card p-5">
