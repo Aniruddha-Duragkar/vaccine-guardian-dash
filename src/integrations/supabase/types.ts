@@ -14,7 +14,66 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      device_alerts: {
+        Row: {
+          created_at: string
+          device_id: string
+          id: string
+          level: string
+          message: string
+        }
+        Insert: {
+          created_at?: string
+          device_id?: string
+          id?: string
+          level: string
+          message: string
+        }
+        Update: {
+          created_at?: string
+          device_id?: string
+          id?: string
+          level?: string
+          message?: string
+        }
+        Relationships: []
+      }
+      temperature_readings: {
+        Row: {
+          battery_level: number
+          created_at: string
+          device_id: string
+          door_status: string
+          humidity: number
+          id: string
+          peltier_status: string
+          signal_strength: number
+          temperature: number
+        }
+        Insert: {
+          battery_level?: number
+          created_at?: string
+          device_id?: string
+          door_status?: string
+          humidity: number
+          id?: string
+          peltier_status?: string
+          signal_strength?: number
+          temperature: number
+        }
+        Update: {
+          battery_level?: number
+          created_at?: string
+          device_id?: string
+          door_status?: string
+          humidity?: number
+          id?: string
+          peltier_status?: string
+          signal_strength?: number
+          temperature?: number
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
