@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
+import { supabase } from "@/integrations/supabase/client";
 
 export interface TemperaturePoint {
   time: string;
@@ -27,28 +28,13 @@ export interface VaccineData {
   alerts: Alert[];
 }
 
-const generateTimeLabel = (minutesAgo: number) => {
-  const d = new Date(Date.now() - minutesAgo * 60000);
+const formatTime = (dateStr: string) => {
+  const d = new Date(dateStr);
   return d.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" });
 };
 
 const randomInRange = (min: number, max: number) =>
   Math.round((Math.random() * (max - min) + min) * 10) / 10;
-
-const generateHistory = (points: number): TemperaturePoint[] =>
-  Array.from({ length: points }, (_, i) => ({
-    time: generateTimeLabel(points - i),
-    temperature: randomInRange(3.5, 6.8),
-    humidity: randomInRange(40, 65),
-  }));
-
-const sampleAlerts: Alert[] = [
-  { id: "1", message: "Temperature exceeded 8°C", timestamp: "14:32", level: "critical" },
-  { id: "2", message: "Door opened for >30s", timestamp: "13:15", level: "warning" },
-  { id: "3", message: "Battery below 20%", timestamp: "12:48", level: "warning" },
-  { id: "4", message: "Temperature spike detected", timestamp: "11:20", level: "critical" },
-  { id: "5", message: "System cooled to target", timestamp: "10:05", level: "info" },
-];
 
 export function useVaccineData() {
   const [data, setData] = useState<VaccineData>({
@@ -61,39 +47,110 @@ export function useVaccineData() {
     signalStrength: 85,
     deviceOnline: true,
     systemStatus: "Stable",
-    temperatureHistory: generateHistory(20),
-    alerts: sampleAlerts,
+    temperatureHistory: [],
+    alerts: [],
   });
 
+  // Fetch initial data from Supabase
   useEffect(() => {
-    const interval = setInterval(() => {
+    const fetchData = async () => {
+      const [readingsRes, alertsRes] = await Promise.all([
+        supabase
+          .from("temperature_readings")
+          .select("*")
+          .order("created_at", { ascending: true })
+          .limit(30),
+        supabase
+          .from("device_alerts")
+          .select("*")
+          .order("created_at", { ascending: false })
+          .limit(10),
+      ]);
+
+      if (readingsRes.data && readingsRes.data.length > 0) {
+        const latest = readingsRes.data[readingsRes.data.length - 1];
+        const history: TemperaturePoint[] = readingsRes.data.map((r) => ({
+          time: formatTime(r.created_at),
+          temperature: Number(r.temperature),
+          humidity: Number(r.humidity),
+        }));
+
+        const temp = Number(latest.temperature);
+        const peltier = latest.peltier_status as VaccineData["peltierStatus"];
+        let status: VaccineData["systemStatus"] = "Stable";
+        if (temp > 7) status = "Warning";
+        else if (peltier === "Cooling") status = "Cooling";
+        else if (peltier === "Heating") status = "Heating";
+
+        setData((prev) => ({
+          ...prev,
+          currentTemp: temp,
+          humidity: Number(latest.humidity),
+          batteryLevel: Number(latest.battery_level),
+          peltierStatus: peltier,
+          doorStatus: latest.door_status as VaccineData["doorStatus"],
+          signalStrength: latest.signal_strength,
+          systemStatus: status,
+          temperatureHistory: history,
+        }));
+      }
+
+      if (alertsRes.data) {
+        const alerts: Alert[] = alertsRes.data.map((a) => ({
+          id: a.id,
+          message: a.message,
+          timestamp: formatTime(a.created_at),
+          level: a.level as Alert["level"],
+        }));
+        setData((prev) => ({ ...prev, alerts }));
+      }
+    };
+
+    fetchData();
+  }, []);
+
+  // Simulate live updates and push to DB
+  useEffect(() => {
+    const interval = setInterval(async () => {
       setData((prev) => {
         const newTemp = Math.max(2, Math.min(8.5, prev.currentTemp + randomInRange(-0.4, 0.4)));
         const newHumidity = Math.max(35, Math.min(70, prev.humidity + randomInRange(-2, 2)));
         const newBattery = Math.max(0, prev.batteryLevel - 0.1);
-        const newPoint: TemperaturePoint = {
-          time: generateTimeLabel(0),
-          temperature: newTemp,
-          humidity: newHumidity,
-        };
+        const roundedTemp = Math.round(newTemp * 10) / 10;
+        const roundedHumidity = Math.round(newHumidity * 10) / 10;
+        const roundedBattery = Math.round(newBattery * 10) / 10;
 
         let status: VaccineData["systemStatus"] = "Stable";
         let peltier: VaccineData["peltierStatus"] = "Idle";
-        if (newTemp > 7) { status = "Warning"; peltier = "Cooling"; }
-        else if (newTemp > prev.targetTemp + 0.5) { status = "Cooling"; peltier = "Cooling"; }
-        else if (newTemp < prev.targetTemp - 0.5) { status = "Heating"; peltier = "Heating"; }
+        if (roundedTemp > 7) { status = "Warning"; peltier = "Cooling"; }
+        else if (roundedTemp > prev.targetTemp + 0.5) { status = "Cooling"; peltier = "Cooling"; }
+        else if (roundedTemp < prev.targetTemp - 0.5) { status = "Heating"; peltier = "Heating"; }
+
+        const newPoint: TemperaturePoint = {
+          time: formatTime(new Date().toISOString()),
+          temperature: roundedTemp,
+          humidity: roundedHumidity,
+        };
+
+        // Insert into DB (fire and forget)
+        supabase.from("temperature_readings").insert({
+          temperature: roundedTemp,
+          humidity: roundedHumidity,
+          battery_level: roundedBattery,
+          peltier_status: peltier,
+        }).then();
 
         return {
           ...prev,
-          currentTemp: Math.round(newTemp * 10) / 10,
-          humidity: Math.round(newHumidity * 10) / 10,
-          batteryLevel: Math.round(newBattery * 10) / 10,
+          currentTemp: roundedTemp,
+          humidity: roundedHumidity,
+          batteryLevel: roundedBattery,
           peltierStatus: peltier,
           systemStatus: status,
           temperatureHistory: [...prev.temperatureHistory.slice(-19), newPoint],
         };
       });
-    }, 2000);
+    }, 3000);
     return () => clearInterval(interval);
   }, []);
 
